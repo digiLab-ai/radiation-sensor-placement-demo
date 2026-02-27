@@ -9,72 +9,84 @@ import streamlit as st
 from simulator import Box, Detector
 from simulator.batch import run_design
 
-# --- digiLab brand (approx placeholders; tweak to your exact palette) ---
-INDIGO = "#3F3DFF"
-KEPPEL = "#2CB1A1"
-KEY_LIME = "#D7F75B"
-INK = "#101828"
-BG = "#F6F7FB"
+# --- digiLab brand  ---
+INDIGO = "#16425B"
+KEPPEL = "#16D5C2"
+KEY_LIME = "#EBF38B"
+INK = "#000000"
+BG = "#FFFFFF"
 
 
 def inject_brand_css() -> None:
     st.markdown(
         f"""
         <style>
-          .stApp {
-            background: {BG};
-            color: {INK};
-          }
-          .digilab-title {
+          :root {{
+            --digilab-indigo: {INDIGO};
+            --digilab-keppel: {KEPPEL};
+            --digilab-keylime: {KEY_LIME};
+            --digilab-ink: {INK};
+            --digilab-bg: {BG};
+          }}
+          .stApp {{
+            background: var(--digilab-bg);
+            color: var(--digilab-ink);
+          }}
+          .digilab-title {{
             font-size: 2.0rem;
             font-weight: 800;
             letter-spacing: -0.02em;
             margin-bottom: 0.25rem;
-          }
-          .digilab-subtitle {
-            color: rgba(16, 24, 40, 0.75);
+          }}
+          .digilab-subtitle {{
+            color: rgba(0, 0, 0, 0.72);
             margin-top: 0;
-          }
-          .digilab-card {
+          }}
+          .digilab-card {{
             background: white;
             border-radius: 16px;
             padding: 16px 16px 8px 16px;
-            border: 1px solid rgba(16, 24, 40, 0.10);
-            box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
-          }
-          .digilab-pill {
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+          }}
+          .digilab-pill {{
             display: inline-block;
             padding: 0.15rem 0.55rem;
             border-radius: 999px;
-            background: rgba(63, 61, 255, 0.10);
-            border: 1px solid rgba(63, 61, 255, 0.25);
-            color: {INDIGO};
+            background: rgba(22, 66, 91, 0.10);
+            border: 1px solid rgba(22, 66, 91, 0.25);
+            color: var(--digilab-indigo);
             font-weight: 600;
             font-size: 0.85rem;
-          }
-          div[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, rgba(63,61,255,0.08), rgba(44,177,161,0.05));
-            border-right: 1px solid rgba(16,24,40,0.08);
-          }
-          .stButton>button {
-            background: {INDIGO};
+          }}
+          div[data-testid="stSidebar"] {{
+            background: linear-gradient(
+              180deg,
+              rgba(22, 66, 91, 0.10),
+              rgba(22, 213, 194, 0.08) 60%,
+              rgba(235, 243, 139, 0.22)
+            );
+            border-right: 1px solid rgba(0, 0, 0, 0.08);
+          }}
+          .stButton>button {{
+            background: var(--digilab-indigo);
             color: white;
             border-radius: 12px;
             border: 0;
             padding: 0.6rem 0.9rem;
             font-weight: 700;
-          }
-          .stDownloadButton>button {
-            background: {KEPPEL};
-            color: white;
+          }}
+          .stDownloadButton>button {{
+            background: var(--digilab-keppel);
+            color: var(--digilab-ink);
             border-radius: 12px;
             border: 0;
             padding: 0.6rem 0.9rem;
             font-weight: 700;
-          }
-          a {
-            color: {INDIGO};
-          }
+          }}
+          a {{
+            color: var(--digilab-indigo);
+          }}
         </style>
         """,
         unsafe_allow_html=True,
