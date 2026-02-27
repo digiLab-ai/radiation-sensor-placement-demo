@@ -101,7 +101,7 @@ def main() -> None:
 
     cols = st.columns([1, 5])
     with cols[0]:
-        logo_path = Path(__file__).resolve().parents[1] / "assets" / "digilab_logo.png"
+        logo_path = Path(__file__).resolve().parents[1] / "assets" / "digilab.png"
         if logo_path.exists():
             st.image(str(logo_path), use_container_width=True)
         else:
