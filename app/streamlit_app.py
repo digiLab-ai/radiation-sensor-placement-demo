@@ -183,11 +183,16 @@ def main() -> None:
         background_cps = st.number_input("Background (cps)", 0.0, 1e6, 1.5, 0.1)
         dwell_s = st.number_input("Dwell time (s)", 0.001, 1e4, 2.0, 0.5)
 
-        run_btn = st.button("Run simulation", use_container_width=True)
+    status_placeholder = st.empty()
+    run_btn = st.button("Run simulation", use_container_width=True)
 
     if not run_btn:
-        st.markdown('<div class="digilab-card">Configure the design in the sidebar, then click <b>Run simulation</b>.</div>', unsafe_allow_html=True)
+        status_placeholder.markdown(
+            '<div class="digilab-card">Configure the design in the sidebar, then click <b>Run simulation</b>.</div>',
+            unsafe_allow_html=True,
+        )
         return
+    status_placeholder.empty()
 
     try:
         distances_m = parse_distances(distances_text)
