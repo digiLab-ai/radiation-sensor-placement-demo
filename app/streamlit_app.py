@@ -295,12 +295,12 @@ def main() -> None:
     left, right = st.columns([1, 1])
 
     with left:
-        st.subheader("Inputs dataframe")
+        st.subheader("Quantities of Interest")
         st.dataframe(inputs_df, use_container_width=True, height=420)
         st.download_button(
-            "Download inputs CSV",
+            "Download quantities_of_interest CSV",
             data=df_to_csv_bytes(inputs_df),
-            file_name="inputs.csv",
+            file_name="quantities_of_interest.csv",
             mime="text/csv",
             use_container_width=True,
         )
