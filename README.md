@@ -15,22 +15,19 @@ Synthetic simulation toolkit for studying detector count-rate behavior versus st
 
 ```bash
 cd radiation-sensor-placement-demo
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e ".[dev]"
+poetry install
 ```
 
 Run tests:
 
 ```bash
-pytest -q
+poetry run pytest -q
 ```
 
 Run the app:
 
 ```bash
-streamlit run app/streamlit_app.py
+poetry run streamlit run app/streamlit_app.py
 ```
 
 ## Minimal Python Usage
