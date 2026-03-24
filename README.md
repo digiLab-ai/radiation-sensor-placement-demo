@@ -2,7 +2,7 @@
 
 ![Overview](assets/overview.png)
 
-Synthetic simulation toolkit for studying detector count-rate behavior versus standoff distance, with:
+Synthetic simulation toolkit for studying detector count-rate behavior around a fixed sample box with varying source activity, with:
 
 - A core physics-inspired simulator (`simulator/core.py`)
 - DOE sampling utilities (`simulator/sampling`)
@@ -67,7 +67,7 @@ print(measured_cps)
 
 `run_design(...)` generates two tables:
 
-- `inputs_df`: sampled hotspot parameters and fixed nuisance settings
+- `inputs_df`: sampled quantities of interest and fixed source settings
 - `measurements_df`: measured count-rate columns per candidate distance (`cps_d_...m`)
 
 Example:
@@ -82,11 +82,13 @@ inputs_df, measurements_df = run_design(
     box=Box(Lx=0.10, Ly=0.04, Lz=0.10),
     detector=Detector(area_m2=2.5e-4, efficiency=0.2, background_cps=1.5, dwell_s=2.0),
     bounds={
-        "width_x_m": (0.0, 0.10),
-        "depth_y_m": (0.0, 0.04),
-        "height_z_m": (0.0, 0.10),
         "mean_activity_bq": (1e4, 1e6),
-        "size_sigma_m": (0.001, 0.010),
+    },
+    fixed_params={
+        "width_x_m": 0.05,
+        "depth_y_m": 0.02,
+        "height_z_m": 0.05,
+        "size_sigma_m": 0.003,
     },
     n_samples=200,
     strategy="lhs",

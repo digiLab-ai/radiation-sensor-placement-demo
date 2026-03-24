@@ -69,11 +69,12 @@ def _validate_params(box: Box, det: Detector, hs: Hotspot) -> None:
 
 
 def simulate_measured_activity(
-    distances_m: np.ndarray,
+    distances_m: Optional[np.ndarray],
     *,
     box: Box,
     detector: Detector,
     hotspot: Hotspot,
+    sensor_positions_m: Optional[np.ndarray] = None,
     mu_material_m_inv: float = 0.0,
     fov_half_angle_deg: Optional[float] = None,
     distance_offset_m: float = 0.0,
@@ -81,7 +82,7 @@ def simulate_measured_activity(
     rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Simulate activity measurements vs detector distance.
+    Simulate activity measurements at a set of detector locations.
 
     Model (small-detector approximation):
       expected_cps = background_cps + signal_cps
@@ -92,6 +93,10 @@ def simulate_measured_activity(
       Omega ≈ detector.area * cos(theta) / r^2
       r = distance from hotspot to detector center
       theta = angle between detector normal (+y) and direction to hotspot
+
+    Inputs:
+      - distances_m: legacy front-of-box detector standoff distances
+      - sensor_positions_m: explicit detector centers as an (N, 3) array in metres
 
     Options:
       - FOV half-angle: if provided, reject signal outside cone
@@ -104,9 +109,6 @@ def simulate_measured_activity(
     measured_cps : (N,) float
     """
     _validate_params(box, detector, hotspot)
-    d = np.asarray(distances_m, dtype=float).ravel()
-    if np.any(d < 0):
-        raise ValueError("distances_m must be >= 0")
 
     if rng is None:
         rng = np.random.default_rng()
@@ -114,9 +116,24 @@ def simulate_measured_activity(
     if mu_material_m_inv < 0:
         raise ValueError(f"mu_material_m_inv must be >= 0, got {mu_material_m_inv}")
 
-    det_x = box.Lx / 2.0
-    det_z = box.Lz / 2.0
-    det_y = -(d + float(distance_offset_m))
+    if sensor_positions_m is not None:
+        sensor_positions = np.asarray(sensor_positions_m, dtype=float)
+        if sensor_positions.ndim != 2 or sensor_positions.shape[1] != 3:
+            raise ValueError("sensor_positions_m must have shape (N, 3)")
+        det_x = sensor_positions[:, 0]
+        det_y = sensor_positions[:, 1] - float(distance_offset_m)
+        det_z = sensor_positions[:, 2]
+    else:
+        if distances_m is None:
+            raise ValueError("Either distances_m or sensor_positions_m must be provided")
+        d = np.asarray(distances_m, dtype=float).ravel()
+        if d.size == 0:
+            raise ValueError("distances_m must be non-empty")
+        if np.any(d < 0):
+            raise ValueError("distances_m must be >= 0")
+        det_x = np.full_like(d, box.Lx / 2.0, dtype=float)
+        det_z = np.full_like(d, box.Lz / 2.0, dtype=float)
+        det_y = -(d + float(distance_offset_m))
 
     hx, hy, hz = hotspot.width_x_m, hotspot.depth_y_m, hotspot.height_z_m
 
