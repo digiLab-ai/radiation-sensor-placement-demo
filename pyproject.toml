@@ -9,9 +9,12 @@ description = "digiLab hotspot detector simulator + Streamlit app"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "altair>=5.0",
   "numpy>=1.24",
   "pandas>=2.0",
+  "plotly>=5.24",
   "scipy>=1.10",
+  "streamlit>=1.32",
 ]
 
 [tool.poetry]
@@ -23,8 +26,6 @@ packages = [
 [dependency-groups]
 dev = [
   "pytest>=7.0",
-  "plotly>=5.24",
-  "streamlit>=1.32",
 ]
 
 [tool.setuptools]
