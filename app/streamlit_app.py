@@ -194,11 +194,11 @@ def present_measurements_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df.copy()
 
 
-def hotspot_center_values(box: Box) -> Dict[str, float]:
+def hotspot_position_with_height(box: Box, height_z_m: float) -> Dict[str, float]:
     return {
         "width_x_m": float(box.Lx / 2.0),
         "depth_y_m": float(box.Ly / 2.0),
-        "height_z_m": float(box.Lz / 2.0),
+        "height_z_m": float(height_z_m),
     }
 
 
@@ -207,8 +207,9 @@ def make_hotspot_with_fixed_position(
     *,
     activity_mean_bq: float,
     size_m: float,
+    height_z_m: float,
 ) -> Hotspot:
-    center = hotspot_center_values(box)
+    center = hotspot_position_with_height(box, height_z_m)
     return Hotspot(
         width_x_m=center["width_x_m"],
         depth_y_m=center["depth_y_m"],
@@ -496,6 +497,7 @@ def render_generate_measurement_tab(
     *,
     sensor_positions_m: np.ndarray,
     bounds: Dict[str, Tuple[float, float]],
+    nuisance_bounds: Dict[str, Tuple[float, float]],
     box: Box,
     detector: Detector,
     size_m: float,
@@ -506,15 +508,30 @@ def render_generate_measurement_tab(
     seed: int,
 ) -> None:
     st.subheader("Test performance")
-    st.caption("Tune source activity for a hotspot fixed at the centre of the sample, choose available sensors, and export the simulated measurements.")
+    st.caption("Tune source activity while varying hotspot height as a nuisance parameter, choose available sensors, and export the simulated measurements.")
 
     controls_col, outputs_col = st.columns([1.4, 1.0], gap="large")
 
     with controls_col:
         st.markdown("##### Quantities of Interest")
-        center = hotspot_center_values(box)
+        nuisance_height_lo, nuisance_height_hi = nuisance_bounds["height_z_m"]
+        nuisance_height = st.slider(
+            "hotspot_height_z_m",
+            min_value=float(nuisance_height_lo),
+            max_value=float(nuisance_height_hi),
+            value=min(
+                max(
+                    float(st.session_state.get("measurement_height_z_m", midpoint((nuisance_height_lo, nuisance_height_hi)))),
+                    float(nuisance_height_lo),
+                ),
+                float(nuisance_height_hi),
+            ),
+            step=slider_step((nuisance_height_lo, nuisance_height_hi)),
+            key="measurement_height_z_m",
+        )
+        center = hotspot_position_with_height(box, nuisance_height)
         st.info(
-            "Hotspot position is fixed at the centre of the sample: "
+            "Hotspot x/y position is fixed while height varies as a nuisance parameter: "
             f"x={center['width_x_m']:.3f} m, y={center['depth_y_m']:.3f} m, z={center['height_z_m']:.3f} m. "
             f"Source size is fixed at {size_m:.3f} m."
         )
@@ -559,6 +576,7 @@ def render_generate_measurement_tab(
                         box,
                         activity_mean_bq=qoi_values["mean_activity_bq"],
                         size_m=size_m,
+                        height_z_m=nuisance_height,
                     ),
                     mu_material_m_inv=mu_material_m_inv,
                     fov_half_angle_deg=fov_half_angle_deg,
@@ -662,7 +680,7 @@ def main() -> None:
     with cols[1]:
         st.markdown('<div class="digilab-title">Hotspot Detector Simulator</div>', unsafe_allow_html=True)
         st.markdown(
-            '<p class="digilab-subtitle">Generate synthetic count-rate measurements around a fixed sample box, with activity as the quantity of interest and the hotspot fixed at the sample centre.</p>',
+            '<p class="digilab-subtitle">Generate synthetic count-rate measurements around a fixed sample box, with activity as the quantity of interest and hotspot height varied as a nuisance parameter.</p>',
             unsafe_allow_html=True,
         )
 
@@ -702,16 +720,17 @@ def main() -> None:
 
         st.divider()
         st.header("Fixed source parameters")
-        st.caption("The hotspot remains fixed at the sample centre.")
+        st.caption("The hotspot remains fixed in x/y, while its height varies as a nuisance parameter.")
         size_m = st.number_input("size_m", min_value=1e-6, max_value=1.0, value=0.003, step=0.001, format="%.3f")
 
         st.divider()
         st.header("Nuisance parameters")
+        nuisance_height = bound_row("hotspot_height_z_m", 0.0, float(Lz), 0.005, "%.3f")
+        mu_material_m_inv = 0.0
+        st.caption("Material attenuation is fixed at 0 1/m.")
 
         use_fov = st.checkbox("Use FOV cone", value=True)
         fov_half_angle_deg = st.slider("FOV half-angle (deg)", 1.0, 89.0, 30.0, 1.0) if use_fov else None
-
-        mu_material_m_inv = st.number_input("Material attenuation μ (1/m)", 0.0, 1e4, 8.0, 0.5)
         noise = st.selectbox("Sensor noise", ["none", "poisson"], index=1)
         distance_offset_m = st.number_input("Distance offset (m)", 0.0, 1.0, 0.0, 0.001, format="%.3f")
 
@@ -735,6 +754,9 @@ def main() -> None:
     bounds: Dict[str, Tuple[float, float]] = {
         "mean_activity_bq": b_activity,
     }
+    nuisance_bounds: Dict[str, Tuple[float, float]] = {
+        "height_z_m": nuisance_height,
+    }
 
     current_sidebar_signature = (
         int(n_samples),
@@ -744,10 +766,10 @@ def main() -> None:
         float(Ly),
         float(Lz),
         tuple(map(float, b_activity)),
+        tuple(map(float, nuisance_height)),
         float(size_m),
         bool(use_fov),
         None if fov_half_angle_deg is None else float(fov_half_angle_deg),
-        float(mu_material_m_inv),
         str(noise),
         float(distance_offset_m),
         float(area_m2),
@@ -786,9 +808,10 @@ def main() -> None:
                     sensor_names=sensor_labels,
                     box=box,
                     detector=detector,
-                    bounds=bounds,
+                    bounds={**bounds, **nuisance_bounds},
                     fixed_params={
-                        **hotspot_center_values(box),
+                        "width_x_m": float(box.Lx / 2.0),
+                        "depth_y_m": float(box.Ly / 2.0),
                         "size_sigma_m": float(size_m),
                     },
                     n_samples=int(n_samples),
@@ -819,6 +842,7 @@ def main() -> None:
         render_generate_measurement_tab(
             sensor_positions_m=sensor_positions_m,
             bounds=bounds,
+            nuisance_bounds=nuisance_bounds,
             box=box,
             detector=detector,
             size_m=float(size_m),

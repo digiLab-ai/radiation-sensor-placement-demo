@@ -19,11 +19,10 @@ def test_run_design_can_use_activity_as_the_only_qoi():
         sensor_names=["S1", "S2"],
         box=box,
         detector=detector,
-        bounds={"mean_activity_bq": (1e4, 2e4)},
+        bounds={"mean_activity_bq": (1e4, 2e4), "height_z_m": (0.02, 0.08)},
         fixed_params={
             "width_x_m": box.Lx / 2.0,
             "depth_y_m": box.Ly / 2.0,
-            "height_z_m": box.Lz / 2.0,
             "size_sigma_m": 0.003,
         },
         n_samples=8,
@@ -34,14 +33,14 @@ def test_run_design_can_use_activity_as_the_only_qoi():
 
     assert list(inputs_df.columns) == [
         "mean_activity_bq",
+        "height_z_m",
         "width_x_m",
         "depth_y_m",
-        "height_z_m",
         "size_sigma_m",
     ]
     assert np.all(inputs_df["width_x_m"] == box.Lx / 2.0)
     assert np.all(inputs_df["depth_y_m"] == box.Ly / 2.0)
-    assert np.all(inputs_df["height_z_m"] == box.Lz / 2.0)
+    assert np.all(inputs_df["height_z_m"].between(0.02, 0.08))
     assert np.all(inputs_df["mean_activity_bq"].between(1e4, 2e4))
     assert list(measurements_df.columns) == ["S1", "S2"]
     assert measurements_df.shape == (8, 2)
