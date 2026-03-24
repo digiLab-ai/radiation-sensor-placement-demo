@@ -48,7 +48,7 @@ hs = Hotspot(
     size_sigma_m=0.003,
 )
 
-distances = np.array([0.01, 0.025, 0.05, 0.10, 0.15, 0.20])
+distances = np.array([0.025, 0.05, 0.10, 0.15, 0.20])
 expected_cps, measured_cps = simulate_measured_activity(
     distances,
     box=box,

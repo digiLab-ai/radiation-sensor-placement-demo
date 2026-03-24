@@ -7,6 +7,7 @@ from typing import Dict, Optional, Tuple
 import altair as alt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -165,8 +166,39 @@ def slider_step(bounds: Tuple[float, float]) -> float:
     return max((float(hi) - float(lo)) / 100.0, 1e-6)
 
 
-def sensor_name(distance: float) -> str:
-    return f"d_{distance:.6g}m"
+def sensor_names(n_sensors: int) -> list[str]:
+    return [f"S{i}" for i in range(1, n_sensors + 1)]
+
+
+def default_sensor_positions(box: Box) -> np.ndarray:
+    x_levels = np.linspace(-0.15 * box.Lx, 1.15 * box.Lx, 3)
+    y_levels = np.array([-1.1 * box.Ly, -0.55 * box.Ly, -0.15 * box.Ly], dtype=float)
+    z_levels = np.linspace(-0.15 * box.Lz, 1.15 * box.Lz, 5)
+
+    positions = []
+    for z_index, z_value in enumerate(z_levels):
+        for x_index, x_value in enumerate(x_levels):
+            y_value = y_levels[(x_index + z_index) % len(y_levels)]
+            positions.append((x_value, y_value, z_value))
+    return np.asarray(positions, dtype=float)
+
+
+def sensor_layout_dataframe(box: Box, sensor_positions_m: np.ndarray) -> pd.DataFrame:
+    names = sensor_names(len(sensor_positions_m))
+    sample_x = np.full(len(sensor_positions_m), box.Lx / 2.0)
+    sample_y = np.full(len(sensor_positions_m), box.Ly / 2.0)
+    sample_z = np.full(len(sensor_positions_m), box.Lz / 2.0)
+    return pd.DataFrame(
+        {
+            "sensor": names,
+            "sensor_x_m": sensor_positions_m[:, 0],
+            "sensor_y_m": sensor_positions_m[:, 1],
+            "sensor_z_m": sensor_positions_m[:, 2],
+            "sample_x_m": sample_x,
+            "sample_y_m": sample_y,
+            "sample_z_m": sample_z,
+        }
+    )
 
 
 def present_qoi_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -175,12 +207,8 @@ def present_qoi_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return renamed
 
 
-def present_measurements_dataframe(df: pd.DataFrame, distances_m: np.ndarray) -> pd.DataFrame:
-    renamed_columns = {
-        original: sensor_name(distance)
-        for original, distance in zip(df.columns.tolist(), np.asarray(distances_m, dtype=float))
-    }
-    return df.rename(columns=renamed_columns)
+def present_measurements_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    return df.copy()
 
 
 def make_hotspot(values: Dict[str, float]) -> Hotspot:
@@ -199,7 +227,7 @@ def truth_dataframe(values: Dict[str, float]) -> pd.DataFrame:
 
 def measurement_dataframe(
     *,
-    distances_m: np.ndarray,
+    sensor_positions_m: np.ndarray,
     box: Box,
     detector: Detector,
     hotspot: Hotspot,
@@ -211,18 +239,19 @@ def measurement_dataframe(
 ) -> pd.DataFrame:
     rng = np.random.default_rng(seed + 4242)
     expected_cps, measured_cps = simulate_measured_activity(
-        distances_m,
+        None,
         box=box,
         detector=detector,
         hotspot=hotspot,
+        sensor_positions_m=sensor_positions_m,
         mu_material_m_inv=mu_material_m_inv,
         fov_half_angle_deg=fov_half_angle_deg,
         distance_offset_m=distance_offset_m,
         noise=noise,  # type: ignore[arg-type]
         rng=rng,
     )
-    sensor_names = [sensor_name(distance) for distance in distances_m]
-    measurement_row = {sensor_name: value for sensor_name, value in zip(sensor_names, measured_cps)}
+    labels = sensor_names(len(sensor_positions_m))
+    measurement_row = {label: value for label, value in zip(labels, measured_cps)}
     return pd.DataFrame([measurement_row])
 
 
@@ -318,15 +347,101 @@ def comparison_chart(
     return (area + line + truth_rule + mean_rule).properties(height=220, title=quantity)
 
 
+def sensor_schematic_figure(box: Box, sensor_positions_m: np.ndarray) -> go.Figure:
+    labels = sensor_names(len(sensor_positions_m))
+    sample_center = np.array([box.Lx / 2.0, box.Ly / 2.0, box.Lz / 2.0], dtype=float)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter3d(
+            x=sensor_positions_m[:, 0],
+            y=sensor_positions_m[:, 1],
+            z=sensor_positions_m[:, 2],
+            mode="markers+text",
+            text=labels,
+            textposition="top center",
+            name="Sensors",
+            marker=dict(size=6, color=INDIGO),
+            hovertemplate="Sensor %{text}<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter3d(
+            x=[sample_center[0]],
+            y=[sample_center[1]],
+            z=[sample_center[2]],
+            mode="text",
+            text=["Sample"],
+            textposition="bottom center",
+            name="Sample center",
+            hovertemplate="Sample center<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>",
+        )
+    )
+
+    corners = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [box.Lx, 0.0, 0.0],
+            [box.Lx, box.Ly, 0.0],
+            [0.0, box.Ly, 0.0],
+            [0.0, 0.0, box.Lz],
+            [box.Lx, 0.0, box.Lz],
+            [box.Lx, box.Ly, box.Lz],
+            [0.0, box.Ly, box.Lz],
+        ],
+        dtype=float,
+    )
+    edges = [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    ]
+    for start, end in edges:
+        fig.add_trace(
+            go.Scatter3d(
+                x=[corners[start, 0], corners[end, 0]],
+                y=[corners[start, 1], corners[end, 1]],
+                z=[corners[start, 2], corners[end, 2]],
+                mode="lines",
+                line=dict(color=KEPPEL, width=5),
+                opacity=0.45,
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+
+    x_min = min(float(sensor_positions_m[:, 0].min()), 0.0)
+    x_max = max(float(sensor_positions_m[:, 0].max()), box.Lx)
+    y_min = min(float(sensor_positions_m[:, 1].min()), 0.0)
+    y_max = max(float(sensor_positions_m[:, 1].max()), box.Ly)
+    z_min = min(float(sensor_positions_m[:, 2].min()), 0.0)
+    z_max = max(float(sensor_positions_m[:, 2].max()), box.Lz)
+
+    fig.update_layout(
+        margin=dict(l=0, r=0, b=0, t=40),
+        height=620,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
+        scene=dict(
+            xaxis=dict(title="x (m)", range=[x_min, x_max]),
+            yaxis=dict(title="y (m)", range=[y_min, y_max]),
+            zaxis=dict(title="z (m)", range=[z_min, z_max]),
+            aspectmode="data",
+            camera=dict(eye=dict(x=1.45, y=1.35, z=1.1)),
+        ),
+    )
+    return fig
+
+
 def render_design_results(
     *,
     inputs_df: Optional[pd.DataFrame],
     measurements_df: Optional[pd.DataFrame],
-    distances_m: Optional[np.ndarray],
+    sensor_positions_m: np.ndarray,
+    box: Box,
     seed: int,
     run_requested: bool,
 ) -> None:
-    if inputs_df is None or measurements_df is None or distances_m is None:
+    if inputs_df is None or measurements_df is None:
         if not run_requested:
             st.markdown(
                 '<div class="digilab-card">Configure the design in the sidebar, then click <b>Run simulation</b>.</div>',
@@ -335,7 +450,7 @@ def render_design_results(
         return
 
     presented_inputs_df = present_qoi_dataframe(inputs_df)
-    presented_measurements_df = present_measurements_dataframe(measurements_df, distances_m)
+    presented_measurements_df = present_measurements_dataframe(measurements_df)
 
     left, right = st.columns([1, 1])
 
@@ -362,77 +477,14 @@ def render_design_results(
         )
 
     st.markdown("")
-    st.subheader("Quick look")
-    sample_count, sensor_count = measurements_df.shape
-    sample_ids = np.arange(sample_count, dtype=int)
-    sample_labels = np.array([f"sample_{i}" for i in sample_ids])
-
-    rng = np.random.default_rng(int(seed) + 2026)
-    default_n = min(10, sample_count)
-    default_ids = np.sort(rng.choice(sample_ids, size=default_n, replace=False))
-    sample_options = [f"sample_{i}" for i in sample_ids]
-    default_labels = [f"sample_{i}" for i in default_ids]
-    default_selection = [{"sample_label": label} for label in default_labels]
-
-    if "quick_look_selected_labels" not in st.session_state:
-        st.session_state.quick_look_selected_labels = default_labels
-    else:
-        selected = st.session_state.quick_look_selected_labels
-        if any(label not in sample_options for label in selected):
-            st.session_state.quick_look_selected_labels = default_labels
-
-    plot_df = pd.DataFrame(
-        {
-            "sample_label": np.repeat(sample_labels, sensor_count),
-            "distance_m": np.tile(distances_m, sample_count),
-            "cps": measurements_df.to_numpy().reshape(-1),
-        }
-    )
-    quick_look_left, quick_look_right = st.columns([5, 2])
-
-    with quick_look_right:
-        selected_labels = st.multiselect(
-            "Samples",
-            options=sample_options,
-            key="quick_look_selected_labels",
-            help="Scrollable list for selecting many samples at once.",
-        )
-
-    filtered_plot_df = plot_df[plot_df["sample_label"].isin(selected_labels)]
-    if filtered_plot_df.empty:
-        with quick_look_left:
-            st.info("Select at least one sample to display traces.")
-        return
-
-    select_samples = alt.selection_point(
-        fields=["sample_label"],
-        bind="legend",
-        toggle="true",
-        clear=False,
-        value=default_selection,
-    )
-
-    quick_look_chart = (
-        alt.Chart(filtered_plot_df)
-        .mark_line()
-        .encode(
-            x=alt.X("distance_m:Q", title="Distance (m)"),
-            y=alt.Y("cps:Q", title="Count rate (cps)"),
-            color=alt.Color("sample_label:N", title="Samples"),
-            opacity=alt.condition(select_samples, alt.value(0.95), alt.value(0.0)),
-        )
-        .add_params(select_samples)
-        .properties(height=380)
-    )
-    with quick_look_left:
-        st.altair_chart(quick_look_chart, use_container_width=True)
-    st.caption("Use the sample list for bulk selection and the legend for quick toggling.")
+    st.subheader("Sensor placement sketch")
+    st.plotly_chart(sensor_schematic_figure(box, sensor_positions_m), use_container_width=True)
+    # st.caption("Sample box is shown as the wireframe volume, with sensors labeled S1-S15 and the sample labeled at its center.")
 
 
 def render_generate_measurement_tab(
     *,
-    distances_m: Optional[np.ndarray],
-    distance_error: Optional[str],
+    sensor_positions_m: np.ndarray,
     bounds: Dict[str, Tuple[float, float]],
     box: Box,
     detector: Detector,
@@ -444,12 +496,6 @@ def render_generate_measurement_tab(
 ) -> None:
     st.subheader("Generate measurement")
     st.caption("Tune a single hotspot within the configured bounds, choose available sensors, and export the simulated measurements.")
-
-    if distance_error is not None:
-        st.error(f"Candidate distances are invalid: {distance_error}")
-        return
-
-    assert distances_m is not None
 
     controls_col, outputs_col = st.columns([1.4, 1.0], gap="large")
 
@@ -472,7 +518,7 @@ def render_generate_measurement_tab(
 
     with outputs_col:
         st.markdown("##### Available sensors")
-        sensor_choices = [sensor_name(distance) for distance in distances_m]
+        sensor_choices = sensor_names(len(sensor_positions_m))
         default_selected = sensor_choices if "selected_measurement_sensors" not in st.session_state else st.session_state.selected_measurement_sensors
         selected_sensors = st.multiselect(
             "Sensors",
@@ -488,12 +534,10 @@ def render_generate_measurement_tab(
             if not selected_sensors:
                 st.error("Select at least one sensor.")
             else:
-                selected_distances = np.array(
-                    [distance for distance, label in zip(distances_m, sensor_choices) if label in selected_sensors],
-                    dtype=float,
-                )
+                selected_mask = np.array([label in selected_sensors for label in sensor_choices], dtype=bool)
+                selected_positions = sensor_positions_m[selected_mask]
                 measurement_df = measurement_dataframe(
-                    distances_m=selected_distances,
+                    sensor_positions_m=selected_positions,
                     box=box,
                     detector=detector,
                     hotspot=make_hotspot(qoi_values),
@@ -611,13 +655,7 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Experiment design")
-
-        distances_text = st.text_area(
-            "Candidate distances (m)",
-            value="0.01, 0.025, 0.05, 0.075, 0.10, 0.15, 0.20, 0.25",
-            help="Comma or space separated.",
-            height=90,
-        )
+        st.caption("The simulator uses a fixed 3D layout of 15 sensors labeled S1-S15 around the sample volume.")
 
         n_samples = st.number_input("Number of samples", min_value=1, max_value=50000, value=200, step=10)
         strategy = st.selectbox("Sampling strategy", ["lhs", "sobol", "random"], index=1)
@@ -664,8 +702,24 @@ def main() -> None:
         background_cps = st.number_input("Background (cps)", 0.0, 1e6, 1.5, 0.1)
         dwell_s = st.number_input("Dwell time (s)", 0.001, 1e4, 2.0, 0.5)
 
+    box = Box(Lx=float(Lx), Ly=float(Ly), Lz=float(Lz))
+    sensor_positions_m = default_sensor_positions(box)
+    sensor_labels = sensor_names(len(sensor_positions_m))
+    detector = Detector(
+        area_m2=float(area_m2),
+        efficiency=float(efficiency),
+        background_cps=float(background_cps),
+        dwell_s=float(dwell_s),
+    )
+    bounds: Dict[str, Tuple[float, float]] = {
+        "width_x_m": b_width,
+        "depth_y_m": b_depth,
+        "height_z_m": b_height,
+        "mean_activity_bq": b_activity,
+        "size_sigma_m": b_size,
+    }
+
     current_sidebar_signature = (
-        distances_text.strip(),
         int(n_samples),
         str(strategy),
         int(seed),
@@ -694,8 +748,6 @@ def main() -> None:
         st.session_state.cached_inputs_df = None
     if "cached_measurements_df" not in st.session_state:
         st.session_state.cached_measurements_df = None
-    if "cached_distances_m" not in st.session_state:
-        st.session_state.cached_distances_m = None
     if "generated_measurement_df" not in st.session_state:
         st.session_state.generated_measurement_df = None
     if "generated_truth_qoi" not in st.session_state:
@@ -708,72 +760,46 @@ def main() -> None:
     if sidebar_changed_after_run:
         st.session_state.cached_inputs_df = None
         st.session_state.cached_measurements_df = None
-        st.session_state.cached_distances_m = None
-
-    try:
-        parsed_distances_m = parse_distances(distances_text)
-        parsed_distance_error = None
-    except Exception as exc:
-        parsed_distances_m = None
-        parsed_distance_error = str(exc)
-
-    box = Box(Lx=float(Lx), Ly=float(Ly), Lz=float(Lz))
-    detector = Detector(
-        area_m2=float(area_m2),
-        efficiency=float(efficiency),
-        background_cps=float(background_cps),
-        dwell_s=float(dwell_s),
-    )
-    bounds: Dict[str, Tuple[float, float]] = {
-        "width_x_m": b_width,
-        "depth_y_m": b_depth,
-        "height_z_m": b_height,
-        "mean_activity_bq": b_activity,
-        "size_sigma_m": b_size,
-    }
 
     design_tab, measurement_tab = st.tabs(["Sensor Placement Optimisation", "Generate measurement"])
 
     with design_tab:
         run_btn = st.button("Run simulation", key="run_design_simulation", use_container_width=True)
         if run_btn:
-            if parsed_distance_error is not None or parsed_distances_m is None:
-                st.error(f"Could not parse distances: {parsed_distance_error}")
+            try:
+                inputs_df, measurements_df = run_design(
+                    sensor_positions_m=sensor_positions_m,
+                    sensor_names=sensor_labels,
+                    box=box,
+                    detector=detector,
+                    bounds=bounds,
+                    n_samples=int(n_samples),
+                    strategy=str(strategy),
+                    seed=int(seed),
+                    mu_material_m_inv=float(mu_material_m_inv),
+                    fov_half_angle_deg=fov_half_angle_deg,
+                    distance_offset_m=float(distance_offset_m),
+                    noise=str(noise),
+                )
+            except Exception as exc:
+                st.error(f"Simulation failed: {exc}")
             else:
-                try:
-                    inputs_df, measurements_df = run_design(
-                        distances_m=parsed_distances_m,
-                        box=box,
-                        detector=detector,
-                        bounds=bounds,
-                        n_samples=int(n_samples),
-                        strategy=str(strategy),
-                        seed=int(seed),
-                        mu_material_m_inv=float(mu_material_m_inv),
-                        fov_half_angle_deg=fov_half_angle_deg,
-                        distance_offset_m=float(distance_offset_m),
-                        noise=str(noise),
-                    )
-                except Exception as exc:
-                    st.error(f"Simulation failed: {exc}")
-                else:
-                    st.session_state.cached_inputs_df = inputs_df
-                    st.session_state.cached_measurements_df = measurements_df
-                    st.session_state.cached_distances_m = parsed_distances_m
-                    st.session_state.last_run_signature = current_sidebar_signature
+                st.session_state.cached_inputs_df = inputs_df
+                st.session_state.cached_measurements_df = measurements_df
+                st.session_state.last_run_signature = current_sidebar_signature
 
         render_design_results(
             inputs_df=st.session_state.cached_inputs_df,
             measurements_df=st.session_state.cached_measurements_df,
-            distances_m=st.session_state.cached_distances_m,
+            sensor_positions_m=sensor_positions_m,
+            box=box,
             seed=int(seed),
             run_requested=run_btn,
         )
 
     with measurement_tab:
         render_generate_measurement_tab(
-            distances_m=parsed_distances_m,
-            distance_error=parsed_distance_error,
+            sensor_positions_m=sensor_positions_m,
             bounds=bounds,
             box=box,
             detector=detector,
